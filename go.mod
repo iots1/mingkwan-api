@@ -1,4 +1,4 @@
-module github.com/iots1/ming-kwan-api
+module github.com/iots1/mingkwan-api
 
 go 1.24.4
 
