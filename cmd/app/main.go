@@ -3,7 +3,7 @@ package main
 
 import (
 	"context"
-	"fmt" // Keep for fmt.Sprintf
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
@@ -11,17 +11,44 @@ import (
 
 	"github.com/go-playground/validator/v10"
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/redis/go-redis/v9"
-	"go.uber.org/zap" // For zap.Error, zap.String etc.
+	"go.uber.org/zap"
+
+	fiberSwagger "github.com/swaggo/fiber-swagger"
 
 	"github.com/iots1/mingkwan-api/config"
 	"github.com/iots1/mingkwan-api/internal/modules"
 	"github.com/iots1/mingkwan-api/internal/shared/cache"
 	"github.com/iots1/mingkwan-api/internal/shared/event"
 	"github.com/iots1/mingkwan-api/internal/shared/infrastructure"
-	"github.com/iots1/mingkwan-api/internal/shared/utils" // This package now contains the zap logger
+	"github.com/iots1/mingkwan-api/internal/shared/utils"
+
+	_ "github.com/iots1/mingkwan-api/docs"
 )
 
+// @title           Mingkwan API
+// @version         1.0
+// @description     This is a sample server for Mingkwan API.
+// @termsOfService  http://swagger.io/terms/
+
+// @contact.name   API Support
+// @contact.url    http://www.swagger.io/support
+// @contact.email  support@swagger.io
+
+// @license.name  Apache 2.0
+// @license.url   http://www.apache.org/licenses/LICENSE-2.0.html
+
+// @host localhost:8080
+// @BasePath /
+// @schemes http
+
+// @securityDefinitions.apikey ApiKeyAuth
+// @in header
+// @name Authorization
+
+// @externalDocs.description  OpenAPI
+// @externalDocs.url          https://swagger.io/resources/open-api/
 func main() {
 	// --- 0. Setup Global Application Context ---
 	appCtx, appCancel := context.WithCancel(context.Background())
@@ -98,8 +125,48 @@ func main() {
 	// --- 4. Setup Fiber App ---
 	app := fiber.New()
 
-	// Register routes for User module
-	userRoutes := app.Group("/users")
+	// Handler functions
+	// getBooks godoc
+	// @Summary Health check
+	// @Description Checks if the API is up and running.
+	// @Tags Health
+	// @Accept json
+	// @Produce json
+	// @Success 200 {string} string "OK"
+	// @Router /health [get]
+	app.Get("/health", func(c *fiber.Ctx) error {
+		return c.SendString("OK")
+	})
+
+	// Enable CORS
+	app.Use(cors.New(cors.Config{
+		AllowOrigins: "*",
+		AllowMethods: "GET,POST,PUT,DELETE",
+		AllowHeaders: "Content-Type,Authorization",
+	}))
+
+	// Auth Module Dependencies (as previously defined)
+	// jwtGenerator := authAdapter.NewJWTTokenGenerator(appConfig.JWT.Secret)
+	// authService := authUsecase.NewAuthService(
+	//     userMongoRepo,
+	//     jwtGenerator,
+	//     inMemoryBus,
+	//     asynqClient,
+	// )
+	// authHandler := authDelivery.NewAuthHandler(authService)
+	app.Get("/swagger/*", fiberSwagger.WrapHandler)
+
+	// API Routes Group
+	apiV1 := app.Group("/api/v1") // This is your main API group, matching @BasePath
+
+	// Auth Routes
+	// auth := api.Group("/auth")
+	// auth.Post("/register", authHandler.Register)
+	// auth.Post("/login", authHandler.Login)
+	// auth.Post("/refresh", authHandler.Refresh)
+	// auth.Get("/profile", authHandler.GetProfile) // This would need authentication middleware
+
+	userRoutes := apiV1.Group("/users")
 	userRoutes.Post("/", userHandler.CreateUser)
 	userRoutes.Get("/:id", userHandler.GetUserByID)
 	userRoutes.Get("/", userHandler.GetAllUsers)

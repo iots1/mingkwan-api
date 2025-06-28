@@ -1,65 +1,45 @@
 # .air.toml
 
-# Main config for air
-root = "."      # Directory to watch, usually the project root
-tmp_dir = "tmp" # Temporary directory for compiled binaries
+# กำหนดว่าจะให้ Air ตรวจสอบไฟล์ในไดเรกทอรีใดบ้าง
+root = "."
+tmp_dir = "tmp"
 
 [build]
-# Commands to build your application
-# 'go build -o tmp/main cmd/app/main.go' compiles your main application
+# คำสั่งที่จะรันก่อน build โค้ด (เช่น การสร้างเอกสาร Swagger)
+# Air จะรันคำสั่งนี้ทุกครั้งเมื่อตรวจพบการเปลี่ยนแปลงไฟล์
+pre_cmd = ["swag init -dir ./cmd/app"]
+
+# ไดเรกทอรีที่จะทำการ build
+bin = "./tmp/main"
+# คำสั่งสำหรับ build โค้ด Go
 cmd = "go build -o ./tmp/main ./cmd/app/main.go"
-bin = "tmp/main" # Path to the compiled binary
-full_bin = "" # Full path to the binary (not usually needed, 'bin' is enough)
-args = [] # Arguments to pass to the binary
-env = [] # Environment variables for the build command
+
+# ไดเรกทอรีที่ Air ควรจะตรวจสอบการเปลี่ยนแปลง
+include_dir = ["cmd", "config", "internal"]
+# ไดเรกทอรีที่ Air ไม่ควรตรวจสอบการเปลี่ยนแปลง
 exclude_dir = [
-    "assets",
     "tmp",
     "vendor",
-    "node_modules",
-] # Directories to ignore
-exclude_file = [] # Specific files to ignore
-exclude_regex = ["_test.go"] # Regex for files to ignore (e.g., test files)
-follow_symlink = false # Follow symbolic links
-delay = 1000 # Delay before rebuild (milliseconds)
-stop_on_error = true # Stop air if build fails
-log = "build-errors.log" # Log build errors to a file
-include_dir = [] # Directories to specifically include
-exclude_dir_regex = [] # Regex for directories to ignore
-include_ext = [
-    "go",
-    "tpl",
-    "tmpl",
-    "html",
-    "yaml",
-    "toml",
-] # File extensions to watch
+    "docs",   # ไม่ต้องดู docs เพราะเราสร้างใหม่ทุกครั้ง
+]
+# ชนิดของไฟล์ที่ Air ควรตรวจสอบ
+include_ext = ["go", "tpl", "tmpl", "html", "yaml", "json"]
 
 [run]
-# Command to run your application after building
-cmd = "./tmp/main" # Just run the compiled binary
-args = []          # Arguments to pass to the running application
-env = []           # Environment variables for the running application
-# This is important for graceful shutdowns, so the application can clean up before restarting
-# Make sure your Fiber app has graceful shutdown implemented (e.g., using app.ShutdownWithContext)
-# If your app doesn't have it, 'kill' will work but might be abrupt.
-# The `signal` below sends SIGTERM, allowing your app to clean up.
-stop_cmd = "kill -SIGTERM {pid}" # Command to stop the running process
-
-[fmt]
-# Go fmt on save (optional)
-# This will run 'go fmt' automatically when you save a .go file
-# Pass the directory to fmt (usually current directory)
-cmd = "go fmt ./..."
-# Optional: directories to include/exclude for fmt if different from build
-# include_dir = []
-# exclude_dir = []
+# คำสั่งที่จะรันหลังจาก build เสร็จสิ้น
+# ในที่นี้คือการรันไฟล์ binary ที่ build ได้
+# (อาจมี env var เพิ่มเติมตามที่คุณต้องการ)
+cmd = "./tmp/main"
 
 [log]
-# Log settings for air itself
-time = false      # Show timestamp
-main_only = false # Only show logs from the main process
-color = true      # Use colors in air's logs
+# การตั้งค่าสำหรับการแสดง log ของ Air
+time = true
 
-[screen]
-clear = true # Clear screen on rebuild
+[color]
+app = ""
+build = "yellow"
+main = "magenta"
+watcher = "cyan"
+
+[misc]
+clean_on_exit = true

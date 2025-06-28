@@ -9,9 +9,10 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.uber.org/zap"
 
-	"github.com/iots1/mingkwan-api/internal/shared/models"
+	sharedModel "github.com/iots1/mingkwan-api/internal/shared/models"
 	"github.com/iots1/mingkwan-api/internal/shared/utils"
 	"github.com/iots1/mingkwan-api/internal/user/domain"
+	userModel "github.com/iots1/mingkwan-api/internal/user/models"
 )
 
 type UserUsecase interface {
@@ -30,19 +31,6 @@ func NewUserHandler(usecase UserUsecase) *UserHandler {
 	return &UserHandler{userUsecase: usecase}
 }
 
-func toUserResponse(user *domain.User) UserResponse {
-	if user == nil {
-		return UserResponse{}
-	}
-	return UserResponse{
-		ID:        user.ID.Hex(),
-		Name:      user.Name,
-		Email:     user.Email,
-		CreatedAt: user.CreatedAt.Format(time.RFC3339),
-		UpdatedAt: user.UpdatedAt.Format(time.RFC3339),
-	}
-}
-
 func (h *UserHandler) sendErrorResponse(c *fiber.Ctx, statusCode int, message string, err error, validationErrors map[string][]string) error {
 	logFields := []zap.Field{
 		zap.String("method", c.Method()),
@@ -58,7 +46,7 @@ func (h *UserHandler) sendErrorResponse(c *fiber.Ctx, statusCode int, message st
 	}
 	utils.Logger.Error("API Error", logFields...)
 
-	return c.Status(statusCode).JSON(models.CommonErrorResponse{
+	return c.Status(statusCode).JSON(sharedModel.CommonErrorResponse{
 		Success:   false,
 		Timestamp: time.Now().UTC(),
 		Message:   message,
@@ -70,7 +58,7 @@ func (h *UserHandler) sendErrorResponse(c *fiber.Ctx, statusCode int, message st
 }
 
 func (h *UserHandler) sendSuccessResponse(c *fiber.Ctx, statusCode int, data interface{}, count int) error {
-	return c.Status(statusCode).JSON(models.GenericSuccessResponse{
+	return c.Status(statusCode).JSON(sharedModel.GenericSuccessResponse{
 		Code:    statusCode,
 		Success: true,
 		Data:    data,
@@ -79,7 +67,7 @@ func (h *UserHandler) sendSuccessResponse(c *fiber.Ctx, statusCode int, data int
 }
 
 func (h *UserHandler) CreateUser(c *fiber.Ctx) error {
-	var req CreateUserRequest
+	var req userModel.CreateUserRequest
 	if err := c.BodyParser(&req); err != nil {
 		utils.Logger.Warn("CreateUser: Invalid request body", zap.Error(err))
 		return h.sendErrorResponse(c, fiber.StatusBadRequest, "Invalid request body", err, nil)
@@ -105,7 +93,7 @@ func (h *UserHandler) CreateUser(c *fiber.Ctx) error {
 	}
 
 	utils.Logger.Info("User created successfully", zap.String("user_id", user.ID.Hex()), zap.String("email", user.Email))
-	return h.sendSuccessResponse(c, fiber.StatusCreated, toUserResponse(user), 1)
+	return h.sendSuccessResponse(c, fiber.StatusCreated, userModel.ToUserResponse(user), 1)
 }
 
 func (h *UserHandler) GetUserByID(c *fiber.Ctx) error {
@@ -133,7 +121,7 @@ func (h *UserHandler) GetUserByID(c *fiber.Ctx) error {
 	}
 
 	utils.Logger.Info("User retrieved successfully", zap.String("user_id", user.ID.Hex()))
-	return h.sendSuccessResponse(c, fiber.StatusOK, toUserResponse(user), 1)
+	return h.sendSuccessResponse(c, fiber.StatusOK, userModel.ToUserResponse(user), 1)
 }
 
 func (h *UserHandler) GetAllUsers(c *fiber.Ctx) error {
@@ -146,9 +134,10 @@ func (h *UserHandler) GetAllUsers(c *fiber.Ctx) error {
 		return h.sendErrorResponse(c, fiber.StatusInternalServerError, "Failed to retrieve users", err, nil)
 	}
 
-	var userResponses []UserResponse
+	var userResponses []userModel.UserResponse
 	for _, user := range users {
-		userResponses = append(userResponses, toUserResponse(&user))
+		userRespPtr := userModel.ToUserResponse(&user)
+		userResponses = append(userResponses, *userRespPtr)
 	}
 	utils.Logger.Info("All users retrieved successfully", zap.Int("count", len(userResponses)))
 	return h.sendSuccessResponse(c, fiber.StatusOK, userResponses, len(userResponses))
@@ -165,7 +154,7 @@ func (h *UserHandler) UpdateUser(c *fiber.Ctx) error {
 		return h.sendErrorResponse(c, fiber.StatusBadRequest, "Invalid user ID format", err, nil)
 	}
 
-	var req UpdateUserRequest
+	var req userModel.UpdateUserRequest
 	if err := c.BodyParser(&req); err != nil {
 		utils.Logger.Warn("UpdateUser: Invalid request body", zap.Error(err))
 		return h.sendErrorResponse(c, fiber.StatusBadRequest, "Invalid request body", err, nil)
@@ -195,7 +184,7 @@ func (h *UserHandler) UpdateUser(c *fiber.Ctx) error {
 	}
 
 	utils.Logger.Info("User updated successfully", zap.String("user_id", updatedUser.ID.Hex()))
-	return h.sendSuccessResponse(c, fiber.StatusOK, toUserResponse(updatedUser), 1)
+	return h.sendSuccessResponse(c, fiber.StatusOK, userModel.ToUserResponse(updatedUser), 1)
 }
 
 func (h *UserHandler) DeleteUser(c *fiber.Ctx) error {
