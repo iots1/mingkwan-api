@@ -19,8 +19,8 @@ const (
 
 // --- NEW --- Define Asynq Task Names
 const (
-	SendWelcomeEmailTaskName = "user:send_welcome_email" // Define this task name
-	// Add other Asynq task names as needed
+	SendWelcomeEmailTaskName         = "user:send_welcome_email" // Define this task name
+	UserDeletedHighImportance string = "user:deleted_high_importance"
 )
 
 // --- END NEW ---
