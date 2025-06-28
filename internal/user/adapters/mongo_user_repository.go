@@ -64,7 +64,6 @@ func (r *MongoUserRepository) CreateUser(ctx context.Context, user *domain.User)
 		return nil, fmt.Errorf("failed to retrieve inserted ID")
 	}
 
-	utils.Logger.Info("MongoUserRepository: User created successfully", zap.String("user_id", user.ID.Hex()))
 	return user, nil
 }
 

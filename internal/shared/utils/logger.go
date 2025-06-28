@@ -11,12 +11,8 @@ import (
 
 var Logger *zap.Logger
 
-func InitLogger() {
+func InitLogger(env string, logLevel string) {
 	var config zap.Config
-	env := os.Getenv("APP_ENV") // Assuming you have an APP_ENV environment variable
-	if env == "" {
-		env = "development" // Default to development if not set
-	}
 
 	switch env {
 	case "production":
@@ -45,14 +41,9 @@ func InitLogger() {
 		config.Encoding = "console"
 	}
 
-	// Set initial log level from environment, defaulting to Info
-	logLevelStr := os.Getenv("LOG_LEVEL")
-	if logLevelStr == "" {
-		logLevelStr = "info" // Default to Info
-	}
 	var level zapcore.Level
-	if err := level.UnmarshalText([]byte(logLevelStr)); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: Invalid LOG_LEVEL '%s', defaulting to INFO\n", logLevelStr)
+	if err := level.UnmarshalText([]byte(logLevel)); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: Invalid LOG_LEVEL '%s', defaulting to INFO\n", logLevel)
 		level = zapcore.InfoLevel
 	}
 	config.Level.SetLevel(level)
@@ -69,13 +60,6 @@ func InitLogger() {
 // customTimeEncoder formats time as YYYY-MM-DD HH:MM:SS (UTC).
 func customTimeEncoder(t time.Time, enc zapcore.PrimitiveArrayEncoder) {
 	enc.AppendString(t.UTC().Format("2006-01-02 15:04:05 UTC"))
-}
-
-// Ensure the logger is initialized when the package is loaded.
-func init() {
-	// You can choose to call InitLogger here or explicitly in main.go
-	// Calling here ensures Logger is always ready, but main.go gives more control.
-	InitLogger()
 }
 
 // SyncLogger flushes any buffered logs. Should be called before application exits.

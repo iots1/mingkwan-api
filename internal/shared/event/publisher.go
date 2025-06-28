@@ -26,14 +26,6 @@ func (p *LowImportancePublisher) Publish(ctx context.Context, topic string, payl
 		if _, ok := payload.(UserCreatedPayload); !ok {
 			return fmt.Errorf("invalid payload type for %s: %T", topic, payload)
 		}
-	case string(UserUpdatedInMemoryEvent):
-		if _, ok := payload.(UserUpdatedPayload); !ok {
-			return fmt.Errorf("invalid payload type for %s: %T", topic, payload)
-		}
-	case string(UserDeletedInMemoryEvent):
-		if _, ok := payload.(UserDeletedPayload); !ok {
-			return fmt.Errorf("invalid payload type for %s: %T", topic, payload)
-		}
 	default:
 		return fmt.Errorf("unsupported in-memory event topic: %s", topic)
 	}

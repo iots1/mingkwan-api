@@ -29,21 +29,21 @@ func main() {
 
 	// --- 1. Initialize Configuration ---
 	config.InitConfig()
+	appConfig := config.LoadAppConfig()
+	mongoConfig := config.LoadMongoConfig()
+	redisConfig := config.LoadRedisConfig()
+	loggerLevel := config.LoadLoggerConfig()
 
 	// --- Initialize Zap Logger FIRST ---
-	// utils.InitLogger() // This is called in init() func of logger.go
-	defer utils.SyncLogger() // Ensure all buffered logs are flushed on exit
+	utils.InitLogger(appConfig.Environment, loggerLevel)
+	defer utils.SyncLogger()
 
 	utils.Logger.Info("Application is starting up...")
 
 	// Initialize the global validator
 	v := validator.New()
 	utils.SetGlobalValidator(v)
-	utils.Logger.Info("Global validator initialized and set.")
-
-	appConfig := config.LoadAppConfig()
-	mongoConfig := config.LoadMongoConfig()
-	redisConfig := config.LoadRedisConfig()
+	utils.Logger.Debug("Global validator initialized and set.")
 
 	// --- 2. Initialize Infrastructure Connections ---
 	initCtx, initCancel := context.WithTimeout(context.Background(), 10*time.Second)

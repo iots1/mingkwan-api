@@ -13,8 +13,6 @@ type Topic string
 // Define your in-memory event topics
 const (
 	UserCreatedInMemoryEvent = Topic("user.created.inmemory")
-	UserUpdatedInMemoryEvent = Topic("user.updated.inmemory")
-	UserDeletedInMemoryEvent = Topic("user.deleted.inmemory")
 )
 
 // --- NEW --- Define Asynq Task Names

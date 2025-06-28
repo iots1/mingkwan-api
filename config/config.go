@@ -94,6 +94,14 @@ func LoadRedisConfig() RedisConfig {
 	}
 }
 
+func LoadLoggerConfig() string {
+	logLevel := os.Getenv("LOG_LEVEL")
+	if logLevel == "" {
+		logLevel = "info"
+	}
+	return logLevel
+}
+
 // InitConfig loads all configurations.
 func InitConfig() {
 	err := godotenv.Load()

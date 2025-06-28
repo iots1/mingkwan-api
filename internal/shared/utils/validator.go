@@ -8,11 +8,8 @@ import (
 	"github.com/go-playground/validator/v10"
 )
 
-// validate is the global validator instance. It should be initialized once.
 var validate *validator.Validate
 
-// SetGlobalValidator initializes the global validator instance.
-// This function should be called once at application startup (e.g., in main.go).
 func SetGlobalValidator(v *validator.Validate) {
 	if v == nil {
 		panic("Validator instance provided to SetGlobalValidator cannot be nil.")
@@ -20,23 +17,16 @@ func SetGlobalValidator(v *validator.Validate) {
 	validate = v
 }
 
-// GetGlobalValidator returns the global validator instance.
-// It will panic if SetGlobalValidator has not been called.
 func GetGlobalValidator() *validator.Validate {
 	if validate == nil {
-		// This panic indicates a setup error: SetGlobalValidator was not called.
-		// It's a fail-fast approach to ensure the validator is always available.
 		panic("Global validator has not been initialized. Call SetGlobalValidator() with a new validator.Validate() instance at application startup.")
 	}
 	return validate
 }
 
-// FormatValidationErrors validates a struct and returns errors in a map[string][]string format.
-// This function aims to mimic the NestJS validation error structure.
-// It directly takes an error from validate.Struct and formats it.
 func FormatValidationErrors(err error) map[string][]string {
 	if err == nil {
-		return nil // No validation errors
+		return nil
 	}
 
 	// Type assertion to get validator.ValidationErrors
@@ -52,6 +42,7 @@ func FormatValidationErrors(err error) map[string][]string {
 		// Use Namespace() to get the path like "Categories.0.TrendsListNo"
 		// And convert to snake_case for consistent JSON keys
 		fieldName := toSnakeCase(fieldError.Namespace()) // Use Namespace() for full path
+		fmt.Println(fieldName)
 
 		// Generate a user-friendly error message based on the tag
 		errorMessage := getErrorMessage(fieldError)

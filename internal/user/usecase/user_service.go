@@ -34,8 +34,6 @@ func NewUserService(
 }
 
 func (s *UserService) CreateUser(ctx context.Context, name, email, password string) (*domain.User, error) {
-	utils.Logger.Info("UserService: Attempting to create user", zap.String("name", name), zap.String("email", email))
-
 	existingUser, err := s.repo.GetUserByEmail(ctx, email)
 	if err != nil && !errors.Is(err, domain.ErrUserNotFound) {
 		utils.Logger.Error("UserService: Error checking for existing user by email", zap.String("email", email), zap.Error(err))
@@ -68,11 +66,6 @@ func (s *UserService) CreateUser(ctx context.Context, name, email, password stri
 		return nil, fmt.Errorf("failed to save user to database: %w", err)
 	}
 
-	inMemoryPayload := event.UserCreatedPayload{UserID: createdUser.ID, Name: createdUser.Name, Email: createdUser.Email}
-	if err := s.lowPub.Publish(ctx, string(event.UserCreatedInMemoryEvent), inMemoryPayload); err != nil {
-		utils.Logger.Warn("UserService: Failed to publish low importance user created event", zap.Error(err))
-	}
-
 	emailPayload := event.SendWelcomeEmailPayload{UserID: createdUser.ID.Hex(), Email: createdUser.Email, Name: createdUser.Name}
 	if err := s.highPub.Publish(ctx, event.SendWelcomeEmailTaskName, emailPayload); err != nil {
 		utils.Logger.Error("UserService: Failed to publish high importance send welcome email task",
@@ -80,7 +73,7 @@ func (s *UserService) CreateUser(ctx context.Context, name, email, password stri
 		)
 	}
 
-	utils.Logger.Info("UserService: User created and events published", zap.String("name", name), zap.String("user_id", createdUser.ID.Hex()))
+	utils.Logger.Debug("UserService: User created and events published", zap.String("name", name), zap.String("user_id", createdUser.ID.Hex()))
 	return createdUser, nil
 }
 
@@ -168,12 +161,6 @@ func (s *UserService) UpdateUser(ctx context.Context, idStr, name, email string)
 		return nil, fmt.Errorf("failed to update user: %w", err)
 	}
 
-	updatePayload := event.UserUpdatedPayload{UserID: updatedUser.ID, Name: updatedUser.Name, Email: updatedUser.Email}
-	if err := s.lowPub.Publish(ctx, string(event.UserUpdatedInMemoryEvent), updatePayload); err != nil {
-		utils.Logger.Warn("UserService: Failed to publish low importance user updated event", zap.Error(err))
-	}
-
-	utils.Logger.Info("UserService: User updated and events published", zap.String("user_id", updatedUser.ID.Hex()))
 	return updatedUser, nil
 }
 
@@ -193,12 +180,5 @@ func (s *UserService) DeleteUser(ctx context.Context, idStr string) error {
 		utils.Logger.Error("DeleteUser: Failed to delete user from repository", zap.String("user_id", idStr), zap.Error(err))
 		return fmt.Errorf("failed to delete user: %w", err)
 	}
-
-	deletePayload := event.UserDeletedPayload{UserID: objID}
-	if err := s.highPub.Publish(ctx, event.UserDeletedHighImportance, deletePayload); err != nil {
-		utils.Logger.Warn("UserService: Failed to publish high importance user deleted event", zap.Error(err))
-	}
-
-	utils.Logger.Info("UserService: User deleted and event published", zap.String("user_id", idStr))
 	return nil
 }
