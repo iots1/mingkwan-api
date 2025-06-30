@@ -8,20 +8,16 @@ import (
 	"github.com/joho/godotenv"
 )
 
-// AppConfig holds general application-wide settings.
 type AppConfig struct {
 	Port        int
 	Environment string // e.g., "development", "production", "testing"
-	// Add other app-specific settings here
+	SecretKey   string
 }
-
-// MongoConfig holds MongoDB connection settings.
 type MongoConfig struct {
 	URI    string
 	DBName string
 }
 
-// RedisConfig holds Redis connection settings.
 type RedisConfig struct {
 	Addr     string // Host:Port combination
 	Password string
@@ -44,6 +40,7 @@ func LoadAppConfig() AppConfig {
 	return AppConfig{
 		Port:        port,
 		Environment: env,
+		SecretKey:   os.Getenv("APP_SECRET_KEY"),
 	}
 }
 

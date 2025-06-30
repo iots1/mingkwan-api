@@ -13,12 +13,12 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/redis/go-redis/v9"
-	"go.uber.org/zap"
-
 	fiberSwagger "github.com/swaggo/fiber-swagger"
+	"go.uber.org/zap"
 
 	"github.com/iots1/mingkwan-api/config"
 	"github.com/iots1/mingkwan-api/internal/modules"
+	"github.com/iots1/mingkwan-api/internal/shared/adapters"
 	"github.com/iots1/mingkwan-api/internal/shared/cache"
 	"github.com/iots1/mingkwan-api/internal/shared/event"
 	"github.com/iots1/mingkwan-api/internal/shared/infrastructure"
@@ -39,8 +39,8 @@ import (
 // @license.name  Apache 2.0
 // @license.url   http://www.apache.org/licenses/LICENSE-2.0.html
 
-// @host localhost:8080
-// @BasePath /
+// @host localhost:3000
+// @BasePath /api/v1
 // @schemes http
 
 // @securityDefinitions.apikey ApiKeyAuth
@@ -54,7 +54,6 @@ func main() {
 	appCtx, appCancel := context.WithCancel(context.Background())
 	defer appCancel()
 
-	// --- 1. Initialize Configuration ---
 	config.InitConfig()
 	appConfig := config.LoadAppConfig()
 	mongoConfig := config.LoadMongoConfig()
@@ -72,25 +71,26 @@ func main() {
 	utils.SetGlobalValidator(v)
 	utils.Logger.Debug("Global validator initialized and set.")
 
-	// --- 2. Initialize Infrastructure Connections ---
+	passwordHasher := adapters.NewPasswordHasher()
+	utils.Logger.Debug("Password hasher initialized.")
+
+	// --- Initialize Infrastructure Connections ---
 	initCtx, initCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer initCancel()
 
 	// 2.1. MongoDB
 	mongoClient := infrastructure.NewMongoClient(mongoConfig.URI, mongoConfig.DBName)
-	// Use _ to discard the return value, but declare err in the main scope
-	var err error                                          // Declare err here in the main() function's scope
-	if _, err = mongoClient.Connect(initCtx); err != nil { // Assign to the declared err
-		utils.Logger.Fatal("Failed to connect to MongoDB", zap.Error(err)) // Use Zap Fatal
+	var err error
+	if _, err = mongoClient.Connect(initCtx); err != nil {
+		utils.Logger.Fatal("Failed to connect to MongoDB", zap.Error(err))
 	}
 	db := mongoClient.GetDatabase()
 	utils.Logger.Info("Connected to MongoDB", zap.String("database", mongoConfig.DBName))
 
-	// 2.2. Redis (for general use, e.g., caching, sessions)
 	redisClientConn := infrastructure.NewRedisClient(redisConfig.Addr, redisConfig.Password, redisConfig.DB)
 	var rdb *redis.Client                                        // Declare rdb here
 	if rdb, err = redisClientConn.Connect(initCtx); err != nil { // Assign to existing rdb and err
-		utils.Logger.Fatal("Failed to connect to Redis", zap.Error(err)) // Use Zap Fatal
+		utils.Logger.Fatal("Failed to connect to Redis", zap.Error(err))
 	}
 	utils.Logger.Info("Connected to general Redis client", zap.String("address", redisConfig.Addr), zap.Int("db", redisConfig.DB))
 
@@ -105,73 +105,77 @@ func main() {
 		}
 	}
 
-	// 2.3. Initialize In-Memory Event Bus (InMemPubSub)
+	// Initialize In-Memory Event Bus (InMemPubSub)
 	inMemPubSub := event.NewInMemoryBus()
 	utils.Logger.Info("Initialized In-Memory Event Bus (InMemPubSub).")
 
-	// 2.4. Initialize Asynq Client
+	// Initialize Asynq Client
 	asynqRedisOpt := event.GetRedisClientOpt(redisConfig.Addr, redisConfig.Password, redisConfig.DB)
 	asynqConcreteClient := event.NewAsynqClient(asynqRedisOpt)
 	utils.Logger.Info("Initialized Asynq client", zap.String("address", redisConfig.Addr), zap.Int("db", redisConfig.DB))
 
-	// 2.5. Initialize Low and High Importance Publishers
+	// Initialize Low and High Importance Publishers
 	lowPublisher := event.NewLowImportancePublisher(inMemPubSub)
 	highPublisher := event.NewHighImportancePublisher(asynqConcreteClient)
 	utils.Logger.Info("Initialized Low and High Importance Publishers.")
 
-	// --- 3. Setup User Module ---
-	userHandler := modules.SetupUserModule(appCtx, db, lowPublisher, highPublisher, inMemPubSub)
+	appDeps := infrastructure.NewAppDependencies(
+		appCtx,
+		db,
+		rdb,
+		lowPublisher,
+		highPublisher,
+		inMemPubSub,
+		appConfig,
+		passwordHasher,
+	)
 
-	// --- 4. Setup Fiber App ---
 	app := fiber.New()
 
-	// Handler functions
-	// getBooks godoc
+	// Enable CORS
+	app.Use(cors.New(cors.Config{
+		AllowOrigins: "*",
+		AllowMethods: "GET,POST,PUT,DELETE,OPTIONS",
+		AllowHeaders: "Content-Type,Authorization",
+	}))
+
+	app.Get("/swagger/*", fiberSwagger.WrapHandler)
+
+	// @Summary Root
+	// @Description API Version
+	// @Accept json
+	// @Router / [get]
+	app.Get("/", func(c *fiber.Ctx) error {
+		return c.JSON(map[string]string{"version": "Mingkwan API v1.0"})
+	})
+
+	// API Routes Group
+	apiV1 := app.Group("/api/v1")
+	userUsecase := modules.SetupUserModule(apiV1, appDeps)
+	if userUsecase == nil {
+		utils.Logger.Fatal("Failed to setup User Module: userUcase is nil")
+	}
+
+	modules.SetupAuthModule(apiV1, appDeps, *userUsecase)
+
+	// Health check endpoint
 	// @Summary Health check
 	// @Description Checks if the API is up and running.
 	// @Tags Health
 	// @Accept json
 	// @Produce json
 	// @Success 200 {string} string "OK"
-	// @Router /health [get]
-	app.Get("/health", func(c *fiber.Ctx) error {
+	// @Router api/v1/health [get]
+	apiV1.Get("/health", func(c *fiber.Ctx) error {
 		return c.SendString("OK")
 	})
 
-	// Enable CORS
-	app.Use(cors.New(cors.Config{
-		AllowOrigins: "*",
-		AllowMethods: "GET,POST,PUT,DELETE",
-		AllowHeaders: "Content-Type,Authorization",
-	}))
-
-	// Auth Module Dependencies (as previously defined)
-	// jwtGenerator := authAdapter.NewJWTTokenGenerator(appConfig.JWT.Secret)
-	// authService := authUsecase.NewAuthService(
-	//     userMongoRepo,
-	//     jwtGenerator,
-	//     inMemoryBus,
-	//     asynqClient,
-	// )
-	// authHandler := authDelivery.NewAuthHandler(authService)
-	app.Get("/swagger/*", fiberSwagger.WrapHandler)
-
-	// API Routes Group
-	apiV1 := app.Group("/api/v1") // This is your main API group, matching @BasePath
-
 	// Auth Routes
-	// auth := api.Group("/auth")
+	// auth := apiV1.Group("/auth")
 	// auth.Post("/register", authHandler.Register)
 	// auth.Post("/login", authHandler.Login)
 	// auth.Post("/refresh", authHandler.Refresh)
-	// auth.Get("/profile", authHandler.GetProfile) // This would need authentication middleware
-
-	userRoutes := apiV1.Group("/users")
-	userRoutes.Post("/", userHandler.CreateUser)
-	userRoutes.Get("/:id", userHandler.GetUserByID)
-	userRoutes.Get("/", userHandler.GetAllUsers)
-	userRoutes.Put("/:id", userHandler.UpdateUser)
-	userRoutes.Delete("/:id", userHandler.DeleteUser)
+	// auth.Get("/profile", authHandler.GetProfile)
 
 	// ... other routes and middleware
 
@@ -179,7 +183,7 @@ func main() {
 	go func() {
 		port := fmt.Sprintf(":%d", appConfig.Port)
 		if err = app.Listen(port); err != nil { // Assign to existing err
-			utils.Logger.Fatal("Fiber server failed to start", zap.Error(err)) // Use Zap Fatal
+			utils.Logger.Fatal("Fiber server failed to start", zap.Error(err))
 		}
 	}()
 	utils.Logger.Info("Fiber server listening", zap.Int("port", appConfig.Port), zap.String("environment", appConfig.Environment))
@@ -199,8 +203,8 @@ func main() {
 	defer shutdownCancel()
 
 	// 6.3. Shut down Fiber app
-	if err = app.ShutdownWithContext(shutdownCtx); err != nil { // Assign to existing err
-		utils.Logger.Fatal("Fiber server forced to shutdown", zap.Error(err)) // Use Zap Fatal
+	if err = app.ShutdownWithContext(shutdownCtx); err != nil {
+		utils.Logger.Fatal("Fiber server forced to shutdown", zap.Error(err))
 	}
 	utils.Logger.Info("Fiber server gracefully stopped.")
 
@@ -213,7 +217,7 @@ func main() {
 
 	// Ensure Asynq client is closed
 	if asynqConcreteClient != nil {
-		if err = asynqConcreteClient.Close(); err != nil { // Assign to existing err
+		if err = asynqConcreteClient.Close(); err != nil {
 			utils.Logger.Error("Error closing Asynq client", zap.Error(err))
 		} else {
 			utils.Logger.Info("Asynq client disconnected.")

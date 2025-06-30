@@ -9,26 +9,28 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.uber.org/zap"
 
+	sharedAdapter "github.com/iots1/mingkwan-api/internal/shared/adapters"
 	sharedModel "github.com/iots1/mingkwan-api/internal/shared/models"
 	"github.com/iots1/mingkwan-api/internal/shared/utils"
-	"github.com/iots1/mingkwan-api/internal/user/domain"
+	userDomain "github.com/iots1/mingkwan-api/internal/user/domain"
 	userModel "github.com/iots1/mingkwan-api/internal/user/models"
+	userUsecase "github.com/iots1/mingkwan-api/internal/user/usecase"
 )
 
-type UserUsecase interface {
-	CreateUser(ctx context.Context, name, email, password string) (*domain.User, error)
-	GetUserByID(ctx context.Context, idStr string) (*domain.User, error)
-	GetAllUsers(ctx context.Context) ([]domain.User, error)
-	UpdateUser(ctx context.Context, idStr, name, email string) (*domain.User, error)
-	DeleteUser(ctx context.Context, idStr string) error
-}
+var (
+	ErrEmailAlreadyExists = errors.New("email already registered")
+	ErrUserNotFound       = errors.New("user not found")
+	ErrInvalidCredentials = errors.New("invalid email or password")
+	ErrInvalidToken       = errors.New("invalid or expired token")
+)
 
 type UserHandler struct {
-	userUsecase UserUsecase
+	userUsecase    userUsecase.UserUsecase
+	passwordHasher sharedAdapter.PasswordHasher
 }
 
-func NewUserHandler(usecase UserUsecase) *UserHandler {
-	return &UserHandler{userUsecase: usecase}
+func NewUserHandler(useUsecase userUsecase.UserUsecase, passswordHasher sharedAdapter.PasswordHasher) *UserHandler {
+	return &UserHandler{userUsecase: useUsecase, passwordHasher: passswordHasher}
 }
 
 func (h *UserHandler) sendErrorResponse(c *fiber.Ctx, statusCode int, message string, err error, validationErrors map[string][]string) error {
@@ -66,7 +68,7 @@ func (h *UserHandler) sendSuccessResponse(c *fiber.Ctx, statusCode int, data int
 	})
 }
 
-func (h *UserHandler) CreateUser(c *fiber.Ctx) error {
+func (h *UserHandler) CreateUser(c *fiber.Ctx) error { // <--- เปลี่ยน Signature ตรงนี้ให้คืนค่าเป็น error เท่านั้น
 	var req userModel.CreateUserRequest
 	if err := c.BodyParser(&req); err != nil {
 		utils.Logger.Warn("CreateUser: Invalid request body", zap.Error(err))
@@ -79,12 +81,41 @@ func (h *UserHandler) CreateUser(c *fiber.Ctx) error {
 		return h.sendErrorResponse(c, fiber.StatusBadRequest, "Validation failed", nil, formattedErrors)
 	}
 
+	// เพิ่มการตรวจสอบผู้ใช้ที่มีอยู่แล้วตามโค้ดที่คุณให้มา
+	existingUser, err := h.userUsecase.GetUserByEmail(c.Context(), req.Email) // ใช้ c.Context() เพื่อส่ง context มาตรฐาน
+	if err != nil && !errors.Is(err, ErrUserNotFound) {                       // ErrUserNotFound ควรมาจาก domain หรือ usecase
+		utils.Logger.Error("Error checking existing user by email", zap.Error(err), zap.String("email", req.Email))
+		return h.sendErrorResponse(c, fiber.StatusInternalServerError, "Failed to check existing user", err, nil) // เปลี่ยนการคืนค่าให้ถูกต้อง
+	}
+	if existingUser != nil {
+		utils.Logger.Warn("Registration failed: Email already exists", zap.String("email", req.Email))
+		return h.sendErrorResponse(c, fiber.StatusConflict, ErrEmailAlreadyExists.Error(), nil, nil) // เปลี่ยนการคืนค่าให้ถูกต้อง
+	}
+
+	hashedPassword, err := h.passwordHasher.HashPassword(req.Password)
+	if err != nil {
+		utils.Logger.Error("Failed to hash password during registration", zap.Error(err))
+		return h.sendErrorResponse(c, fiber.StatusInternalServerError, "Failed to hash password", err, nil) // เปลี่ยนการคืนค่าให้ถูกต้อง
+	}
+
+	// สร้าง *domain.User object จากข้อมูลที่ผ่านการ validate แล้ว
+	// และใส่ Password ที่ถูก Hash แล้ว
+	newUser := &userDomain.User{
+		ID:        primitive.NewObjectID(), // กำหนด ID ใน Handler หรือ Usecase/Repository
+		Name:      req.Name,
+		Email:     req.Email,
+		Password:  hashedPassword, // ใช้รหัสผ่านที่ถูก Hash แล้ว (เปลี่ยนจาก Password เป็น PasswordHash เพื่อความชัดเจน)
+		CreatedAt: time.Now(),     // กำหนดเวลาสร้าง
+		UpdatedAt: time.Now(),     // กำหนดเวลาอัปเดต
+		IsActive:  true,           // กำหนดสถานะ
+	}
+
 	ctx, cancel := context.WithTimeout(c.Context(), 5*time.Second)
 	defer cancel()
 
-	user, err := h.userUsecase.CreateUser(ctx, req.Name, req.Email, req.Password)
+	user, err := h.userUsecase.CreateUser(ctx, newUser)
 	if err != nil {
-		if errors.Is(err, domain.ErrUserAlreadyExists) {
+		if errors.Is(err, userDomain.ErrUserAlreadyExists) {
 			utils.Logger.Info("CreateUser: User already exists", zap.String("email", req.Email))
 			return h.sendErrorResponse(c, fiber.StatusConflict, err.Error(), nil, nil)
 		}
@@ -93,6 +124,7 @@ func (h *UserHandler) CreateUser(c *fiber.Ctx) error {
 	}
 
 	utils.Logger.Info("User created successfully", zap.String("user_id", user.ID.Hex()), zap.String("email", user.Email))
+	// สำหรับการส่ง Success Response, sendSuccessResponse จะจัดการการส่ง JSON กลับไป
 	return h.sendSuccessResponse(c, fiber.StatusCreated, userModel.ToUserResponse(user), 1)
 }
 
@@ -112,7 +144,7 @@ func (h *UserHandler) GetUserByID(c *fiber.Ctx) error {
 
 	user, err := h.userUsecase.GetUserByID(ctx, id)
 	if err != nil {
-		if errors.Is(err, domain.ErrUserNotFound) {
+		if errors.Is(err, userDomain.ErrUserNotFound) {
 			utils.Logger.Info("GetUserByID: User not found", zap.String("user_id", id))
 			return h.sendErrorResponse(c, fiber.StatusNotFound, err.Error(), nil, nil)
 		}
@@ -171,11 +203,11 @@ func (h *UserHandler) UpdateUser(c *fiber.Ctx) error {
 
 	updatedUser, err := h.userUsecase.UpdateUser(ctx, id, req.Name, req.Email)
 	if err != nil {
-		if errors.Is(err, domain.ErrUserNotFound) {
+		if errors.Is(err, userDomain.ErrUserNotFound) {
 			utils.Logger.Info("UpdateUser: User not found", zap.String("user_id", id))
 			return h.sendErrorResponse(c, fiber.StatusNotFound, err.Error(), nil, nil)
 		}
-		if errors.Is(err, domain.ErrUserAlreadyExists) {
+		if errors.Is(err, userDomain.ErrUserAlreadyExists) {
 			utils.Logger.Info("UpdateUser: Email already in use", zap.String("email", req.Email))
 			return h.sendErrorResponse(c, fiber.StatusConflict, err.Error(), nil, nil)
 		}
@@ -203,7 +235,7 @@ func (h *UserHandler) DeleteUser(c *fiber.Ctx) error {
 
 	err := h.userUsecase.DeleteUser(ctx, id)
 	if err != nil {
-		if errors.Is(err, domain.ErrUserNotFound) {
+		if errors.Is(err, userDomain.ErrUserNotFound) {
 			utils.Logger.Info("DeleteUser: User not found", zap.String("user_id", id))
 			return h.sendErrorResponse(c, fiber.StatusNotFound, err.Error(), nil, nil)
 		}

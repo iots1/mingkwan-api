@@ -1,38 +1,25 @@
 # .air.toml
 
-# กำหนดว่าจะให้ Air ตรวจสอบไฟล์ในไดเรกทอรีใดบ้าง
 root = "."
 tmp_dir = "tmp"
 
 [build]
-# คำสั่งที่จะรันก่อน build โค้ด (เช่น การสร้างเอกสาร Swagger)
-# Air จะรันคำสั่งนี้ทุกครั้งเมื่อตรวจพบการเปลี่ยนแปลงไฟล์
+# ToDo: Swagger not work
 pre_cmd = ["swag init -dir ./cmd/app"]
 
-# ไดเรกทอรีที่จะทำการ build
 bin = "./tmp/main"
-# คำสั่งสำหรับ build โค้ด Go
 cmd = "go build -o ./tmp/main ./cmd/app/main.go"
 
 # ไดเรกทอรีที่ Air ควรจะตรวจสอบการเปลี่ยนแปลง
 include_dir = ["cmd", "config", "internal"]
 # ไดเรกทอรีที่ Air ไม่ควรตรวจสอบการเปลี่ยนแปลง
-exclude_dir = [
-    "tmp",
-    "vendor",
-    "docs",   # ไม่ต้องดู docs เพราะเราสร้างใหม่ทุกครั้ง
-]
-# ชนิดของไฟล์ที่ Air ควรตรวจสอบ
+exclude_dir = ["tmp", "vendor", "docs"]
 include_ext = ["go", "tpl", "tmpl", "html", "yaml", "json"]
 
 [run]
-# คำสั่งที่จะรันหลังจาก build เสร็จสิ้น
-# ในที่นี้คือการรันไฟล์ binary ที่ build ได้
-# (อาจมี env var เพิ่มเติมตามที่คุณต้องการ)
 cmd = "./tmp/main"
 
 [log]
-# การตั้งค่าสำหรับการแสดง log ของ Air
 time = true
 
 [color]
