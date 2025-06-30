@@ -16,7 +16,7 @@ type UserResponse struct {
 
 func ToUserResponse(user *domain.User) *UserResponse {
 	if user == nil {
-		return &UserResponse{}
+		return nil
 	}
 	return &UserResponse{
 		ID:        user.ID.Hex(),

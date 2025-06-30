@@ -68,7 +68,7 @@ func (h *UserHandler) sendSuccessResponse(c *fiber.Ctx, statusCode int, data int
 	})
 }
 
-func (h *UserHandler) CreateUser(c *fiber.Ctx) error { // <--- เปลี่ยน Signature ตรงนี้ให้คืนค่าเป็น error เท่านั้น
+func (h *UserHandler) CreateUser(c *fiber.Ctx) error {
 	var req userModel.CreateUserRequest
 	if err := c.BodyParser(&req); err != nil {
 		utils.Logger.Warn("CreateUser: Invalid request body", zap.Error(err))
@@ -81,33 +81,30 @@ func (h *UserHandler) CreateUser(c *fiber.Ctx) error { // <--- เปลี่�
 		return h.sendErrorResponse(c, fiber.StatusBadRequest, "Validation failed", nil, formattedErrors)
 	}
 
-	// เพิ่มการตรวจสอบผู้ใช้ที่มีอยู่แล้วตามโค้ดที่คุณให้มา
-	existingUser, err := h.userUsecase.GetUserByEmail(c.Context(), req.Email) // ใช้ c.Context() เพื่อส่ง context มาตรฐาน
-	if err != nil && !errors.Is(err, ErrUserNotFound) {                       // ErrUserNotFound ควรมาจาก domain หรือ usecase
+	existingUser, err := h.userUsecase.GetUserByEmail(c.Context(), req.Email)
+	if err != nil && !errors.Is(err, ErrUserNotFound) {
 		utils.Logger.Error("Error checking existing user by email", zap.Error(err), zap.String("email", req.Email))
-		return h.sendErrorResponse(c, fiber.StatusInternalServerError, "Failed to check existing user", err, nil) // เปลี่ยนการคืนค่าให้ถูกต้อง
+		return h.sendErrorResponse(c, fiber.StatusInternalServerError, "Failed to check existing user", err, nil)
 	}
 	if existingUser != nil {
 		utils.Logger.Warn("Registration failed: Email already exists", zap.String("email", req.Email))
-		return h.sendErrorResponse(c, fiber.StatusConflict, ErrEmailAlreadyExists.Error(), nil, nil) // เปลี่ยนการคืนค่าให้ถูกต้อง
+		return h.sendErrorResponse(c, fiber.StatusConflict, ErrEmailAlreadyExists.Error(), nil, nil)
 	}
 
 	hashedPassword, err := h.passwordHasher.HashPassword(req.Password)
 	if err != nil {
 		utils.Logger.Error("Failed to hash password during registration", zap.Error(err))
-		return h.sendErrorResponse(c, fiber.StatusInternalServerError, "Failed to hash password", err, nil) // เปลี่ยนการคืนค่าให้ถูกต้อง
+		return h.sendErrorResponse(c, fiber.StatusInternalServerError, "Failed to hash password", err, nil)
 	}
 
-	// สร้าง *domain.User object จากข้อมูลที่ผ่านการ validate แล้ว
-	// และใส่ Password ที่ถูก Hash แล้ว
 	newUser := &userDomain.User{
-		ID:        primitive.NewObjectID(), // กำหนด ID ใน Handler หรือ Usecase/Repository
+		ID:        primitive.NewObjectID(),
 		Name:      req.Name,
 		Email:     req.Email,
-		Password:  hashedPassword, // ใช้รหัสผ่านที่ถูก Hash แล้ว (เปลี่ยนจาก Password เป็น PasswordHash เพื่อความชัดเจน)
-		CreatedAt: time.Now(),     // กำหนดเวลาสร้าง
-		UpdatedAt: time.Now(),     // กำหนดเวลาอัปเดต
-		IsActive:  true,           // กำหนดสถานะ
+		Password:  hashedPassword,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+		IsActive:  true,
 	}
 
 	ctx, cancel := context.WithTimeout(c.Context(), 5*time.Second)
@@ -124,7 +121,6 @@ func (h *UserHandler) CreateUser(c *fiber.Ctx) error { // <--- เปลี่�
 	}
 
 	utils.Logger.Info("User created successfully", zap.String("user_id", user.ID.Hex()), zap.String("email", user.Email))
-	// สำหรับการส่ง Success Response, sendSuccessResponse จะจัดการการส่ง JSON กลับไป
 	return h.sendSuccessResponse(c, fiber.StatusCreated, userModel.ToUserResponse(user), 1)
 }
 
@@ -134,7 +130,9 @@ func (h *UserHandler) GetUserByID(c *fiber.Ctx) error {
 		utils.Logger.Warn("GetUserByID: User ID is empty in request params")
 		return h.sendErrorResponse(c, fiber.StatusBadRequest, "User ID is required", nil, nil)
 	}
-	if _, err := primitive.ObjectIDFromHex(id); err != nil {
+
+	oid, err := primitive.ObjectIDFromHex(id)
+	if err != nil {
 		utils.Logger.Warn("GetUserByID: Invalid user ID format", zap.String("id", id), zap.Error(err))
 		return h.sendErrorResponse(c, fiber.StatusBadRequest, "Invalid user ID format", err, nil)
 	}
@@ -142,7 +140,7 @@ func (h *UserHandler) GetUserByID(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(c.Context(), 5*time.Second)
 	defer cancel()
 
-	user, err := h.userUsecase.GetUserByID(ctx, id)
+	user, err := h.userUsecase.GetUserByID(ctx, oid)
 	if err != nil {
 		if errors.Is(err, userDomain.ErrUserNotFound) {
 			utils.Logger.Info("GetUserByID: User not found", zap.String("user_id", id))

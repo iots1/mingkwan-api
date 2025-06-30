@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.uber.org/zap"
 
 	authAdapter "github.com/iots1/mingkwan-api/internal/auth/adapters"
@@ -122,8 +123,14 @@ func (s *AuthUsecase) RefreshTokens(ctx context.Context, req *authModel.RefreshR
 		return nil, ErrInvalidToken
 	}
 
+	userID, err := primitive.ObjectIDFromHex(claims.UserID)
+	if err != nil {
+		utils.Logger.Warn("Invalid user ID format in refresh token", zap.String("userID", claims.UserID), zap.Error(err))
+		return nil, ErrInvalidToken
+	}
+
 	// Check if user exists (optional, but good practice for security)
-	user, err := s.userUsecase.GetUserByID(ctx, claims.UserID)
+	user, err := s.userUsecase.GetUserByID(ctx, userID)
 	if err != nil {
 		if errors.Is(err, ErrUserNotFound) {
 			utils.Logger.Warn("Refresh failed: User not found for token", zap.String("userID", claims.UserID))
@@ -147,15 +154,20 @@ func (s *AuthUsecase) RefreshTokens(ctx context.Context, req *authModel.RefreshR
 	}, nil
 }
 
-// GetProfile retrieves a user's profile.
 func (s *AuthUsecase) GetProfile(ctx context.Context, userID string) (*authModel.ProfileResponse, error) {
 	utils.Logger.Info("Attempting to retrieve user profile", zap.String("userID", userID))
 
-	user, err := s.userUsecase.GetUserByID(ctx, userID)
+	oid, err := primitive.ObjectIDFromHex(userID)
+	if err != nil {
+		utils.Logger.Warn("Invalid user ID format", zap.String("userID", userID), zap.Error(err))
+		return nil, ErrInvalidToken
+	}
+
+	user, err := s.userUsecase.GetUserByID(ctx, oid)
 	if err != nil {
 		if errors.Is(err, ErrUserNotFound) {
 			utils.Logger.Warn("Profile retrieval failed: User not found", zap.String("userID", userID))
-			return nil, ErrUserNotFound // Or Unauthorized if it's an auth error
+			return nil, ErrUserNotFound
 		}
 		utils.Logger.Error("Error finding user by ID for profile", zap.Error(err), zap.String("userID", userID))
 		return nil, err

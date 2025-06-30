@@ -73,8 +73,8 @@ func (h *AuthHandler) sendSuccessResponse(c *fiber.Ctx, statusCode int, data int
 	})
 }
 
-func (s *AuthHandler) Register(c *fiber.Ctx) error { // <--- เปลี่ยน Signature ให้คืนค่าเป็น error เท่านั้น
-	var req authModel.RegisterRequest // Assuming RegisterRequest is in authModel
+func (s *AuthHandler) Register(c *fiber.Ctx) error {
+	var req authModel.RegisterRequest
 	if err := c.BodyParser(&req); err != nil {
 		utils.Logger.Warn("Register: Invalid request body", zap.Error(err))
 		return s.sendErrorResponse(c, fiber.StatusBadRequest, "Invalid request body", err, nil)
@@ -86,13 +86,11 @@ func (s *AuthHandler) Register(c *fiber.Ctx) error { // <--- เปลี่ย�
 		return s.sendErrorResponse(c, fiber.StatusBadRequest, "Validation failed", nil, formattedErrors)
 	}
 
-	// ใช้ c.Context() เพื่อส่ง context มาตรฐานไปยัง Usecase
 	ctx, cancel := context.WithTimeout(c.Context(), 5*time.Second)
 	defer cancel()
 
-	// แก้ไข: ใช้ c.Context()
 	existingUser, err := s.userUsecase.GetUserByEmail(ctx, req.Email)
-	if err != nil && !errors.Is(err, ErrUserNotFound) { // ErrUserNotFound ควรมาจาก domain หรือ usecase
+	if err != nil && !errors.Is(err, ErrUserNotFound) {
 		utils.Logger.Error("Error checking existing user by email", zap.Error(err), zap.String("email", req.Email))
 		return s.sendErrorResponse(c, fiber.StatusInternalServerError, "Failed to check existing user", err, nil)
 	}
@@ -108,19 +106,17 @@ func (s *AuthHandler) Register(c *fiber.Ctx) error { // <--- เปลี่ย�
 	}
 
 	newUser := &userDomain.User{
-		ID:        primitive.NewObjectID(), // กำหนด ID ใน Handler หรือ Usecase/Repository
+		ID:        primitive.NewObjectID(),
 		Name:      req.Name,
 		Email:     req.Email,
-		Password:  hashedPassword, // ใช้ PasswordHash แทน Password
+		Password:  hashedPassword,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 		IsActive:  true,
 	}
 
-	// แก้ไข: ใช้ c.Context()
 	createdUser, err := s.userUsecase.CreateUser(ctx, newUser)
 	if err != nil {
-		// ควรใช้ domain.ErrUserAlreadyExists จาก usecase/domain
 		if errors.Is(err, userDomain.ErrUserAlreadyExists) {
 			utils.Logger.Info("Register: User already exists", zap.String("email", req.Email))
 			return s.sendErrorResponse(c, fiber.StatusConflict, err.Error(), nil, nil)
@@ -139,18 +135,15 @@ func (s *AuthHandler) Register(c *fiber.Ctx) error { // <--- เปลี่ย�
 	// s.lowPublisher.Publish(ctx, event.NewUserRegisteredEvent(createdUser.ID.Hex(), createdUser.Email))
 	utils.Logger.Info("User registered successfully", zap.String("userID", createdUser.ID.Hex()), zap.String("email", createdUser.Email))
 
-	// ส่ง Success Response ด้วยข้อมูลที่ต้องการ
 	return s.sendSuccessResponse(c, fiber.StatusCreated, &authModel.AuthResponse{
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
 	}, 1)
 }
 
-// Login authenticates a user and generates tokens.
 func (s *AuthHandler) Login(ctx context.Context, req *authModel.LoginRequest) (*authModel.AuthResponse, error) {
 	utils.Logger.Debug("Attempting user login", zap.String("email", req.Email))
 
-	// Find user by email
 	user, err := s.userUsecase.GetUserByEmail(ctx, req.Email)
 	if err != nil {
 		if errors.Is(err, ErrUserNotFound) {
@@ -184,19 +177,20 @@ func (s *AuthHandler) Login(ctx context.Context, req *authModel.LoginRequest) (*
 	}, nil
 }
 
-// RefreshTokens refreshes access and refresh tokens.
 func (s *AuthHandler) RefreshTokens(ctx context.Context, req *authModel.RefreshRequest) (*authModel.AuthResponse, error) {
-	utils.Logger.Debug("Attempting to refresh tokens")
-
-	// Parse and validate refresh token
 	claims, err := s.jwtGenerator.ParseRefreshToken(req.RefreshToken)
 	if err != nil {
 		utils.Logger.Warn("Refresh token invalid or expired", zap.Error(err))
 		return nil, ErrInvalidToken
 	}
 
-	// Check if user exists (optional, but good practice for security)
-	user, err := s.userUsecase.GetUserByID(ctx, claims.UserID)
+	userID, err := primitive.ObjectIDFromHex(claims.UserID)
+	if err != nil {
+		utils.Logger.Warn("Invalid user ID format in refresh token", zap.String("userID", claims.UserID), zap.Error(err))
+		return nil, ErrInvalidToken
+	}
+
+	user, err := s.userUsecase.GetUserByID(ctx, userID)
 	if err != nil {
 		if errors.Is(err, ErrUserNotFound) {
 			utils.Logger.Warn("Refresh failed: User not found for token", zap.String("userID", claims.UserID))
@@ -206,7 +200,6 @@ func (s *AuthHandler) RefreshTokens(ctx context.Context, req *authModel.RefreshR
 		return nil, err
 	}
 
-	// Generate new tokens
 	newAccessToken, newRefreshToken, err := s.jwtGenerator.GenerateTokens(user.ID.Hex())
 	if err != nil {
 		utils.Logger.Error("Failed to generate new tokens during refresh", zap.Error(err), zap.String("userID", user.ID.Hex()))
@@ -220,17 +213,14 @@ func (s *AuthHandler) RefreshTokens(ctx context.Context, req *authModel.RefreshR
 	}, nil
 }
 
-// GetProfile retrieves a user's profile.
-func (s *AuthHandler) GetProfile(ctx context.Context, userID string) (*authModel.ProfileResponse, error) {
-	utils.Logger.Info("Attempting to retrieve user profile", zap.String("userID", userID))
-
+func (s *AuthHandler) GetProfile(ctx context.Context, userID primitive.ObjectID) (*authModel.ProfileResponse, error) {
 	user, err := s.userUsecase.GetUserByID(ctx, userID)
 	if err != nil {
 		if errors.Is(err, ErrUserNotFound) {
-			utils.Logger.Warn("Profile retrieval failed: User not found", zap.String("userID", userID))
-			return nil, ErrUserNotFound // Or Unauthorized if it's an auth error
+			utils.Logger.Warn("Profile retrieval failed: User not found", zap.String("userID", userID.String()))
+			return nil, ErrUserNotFound
 		}
-		utils.Logger.Error("Error finding user by ID for profile", zap.Error(err), zap.String("userID", userID))
+		utils.Logger.Error("Error finding user by ID for profile", zap.Error(err), zap.String("userID", userID.String()))
 		return nil, err
 	}
 

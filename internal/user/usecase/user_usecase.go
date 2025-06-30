@@ -72,20 +72,15 @@ func (s *UserUsecase) CreateUser(ctx context.Context, data *domain.User) (*domai
 	return createdUser, nil
 }
 
-func (s *UserUsecase) GetUserByID(ctx context.Context, idStr string) (*domain.User, error) {
-	objID, err := primitive.ObjectIDFromHex(idStr)
-	if err != nil {
-		utils.Logger.Debug("GetUserByID: Invalid user ID format", zap.String("id_string", idStr))
-		return nil, fmt.Errorf("invalid user ID format: %w", err)
-	}
+func (s *UserUsecase) GetUserByID(ctx context.Context, oid primitive.ObjectID) (*domain.User, error) {
 
-	user, err := s.repo.GetUserByID(ctx, objID)
+	user, err := s.repo.GetUserByID(ctx, oid)
 	if err != nil {
 		if errors.Is(err, domain.ErrUserNotFound) {
-			utils.Logger.Info("GetUserByID: User not found", zap.String("user_id", idStr))
+			utils.Logger.Info("GetUserByID: User not found", zap.String("user_id", oid.String()))
 			return nil, domain.ErrUserNotFound
 		}
-		utils.Logger.Error("GetUserByID: Failed to get user by ID", zap.String("user_id", idStr), zap.Error(err))
+		utils.Logger.Error("GetUserByID: Failed to get user by ID", zap.String("user_id", oid.String()), zap.Error(err))
 		return nil, fmt.Errorf("failed to get user by ID: %w", err)
 	}
 	return user, nil
