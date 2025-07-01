@@ -119,6 +119,94 @@ REDIS_DB=0
 
 ---
 
+## 📦 Essential Libraries & Concepts
+
+### 🔧 Required Libraries
+
+| Library                             | Purpose                                                                 |
+|-------------------------------------|-------------------------------------------------------------------------|
+| `github.com/gofiber/fiber/v2`       | Fast, Express-like web framework for Go                                 |
+| `github.com/redis/go-redis/v9`      | Redis client for caching and message queue (Asynq)                      |
+| `github.com/swaggo/fiber-swagger`   | Swagger UI handler for Fiber                                            |
+| `github.com/swaggo/swag`            | CLI for generating Swagger docs from annotations                        |
+| `go.uber.org/zap`                   | High-performance structured logging                                     |
+| `github.com/go-playground/validator/v10` | Input validation for request models                              |
+| `github.com/golang-jwt/jwt/v5`      | JWT authentication and token handling                                  |
+| `github.com/hibiken/asynq`          | Task queue library using Redis (for background jobs)                    |
+| `github.com/joho/godotenv`          | Loads environment variables from .env file                              |
+| `go.mongodb.org/mongo-driver`       | Official MongoDB driver for Go                                          |
+
+---
+
+### 🧠 Core Concepts
+
+#### 🟡 In-Memory Event Bus (`InMemPubSub`)
+
+The `InMemPubSub` is a simple pub/sub implementation for broadcasting events within the same process.  
+It is ideal for fast, internal communication where persistence and durability are not required.
+
+- Used in this project for broadcasting low-importance events (e.g., in-memory logging, counters)
+- Subscribers are launched in goroutines and listen using channels
+- Fast, zero external dependencies
+
+Example:
+
+```go
+inMemPubSub := event.NewInMemoryBus()
+subscriber := event.NewUserInmemoryEventSubscribers(inMemPubSub)
+subscriber.StartAllSubscribers(ctx)
+```
+
+#### 🔴 Asynq (Redis-Based Task Queue)
+
+[Asynq](https://github.com/hibiken/asynq) is a Go library for background job processing backed by Redis.
+
+In this project:
+
+- High-importance events (e.g., email sending, database syncing) are published using Asynq
+- Redis is used for reliability, retries, and scheduling
+- Tasks are enqueued via `AsynqClient`, and handlers are registered in a separate worker process (not shown here)
+
+```go
+asynqClient := event.NewAsynqClient(asynq.RedisClientOpt{Addr: "localhost:6379"})
+publisher := event.NewHighImportancePublisher(asynqClient)
+publisher.PublishUserCreated(ctx, payload)
+```
+
+---
+
+### ⚙️ System Design Note
+
+This application is designed as a **modular monolith**, meaning:
+
+- Logic is organized by feature in modular folders (e.g., `auth`, `user`, `payment`)
+- Event-driven communication is used to simulate microservice boundaries
+- Designed with future migration to microservices in mind (clear dependency boundaries, async messaging)
+
+This makes it easier to scale vertically first, then move specific modules to separate services later.
+
+
+---
+
+## 📦 Essential Libraries & Concepts
+
+### 🔧 Required Libraries
+
+| Library                             | Purpose                                                                 |
+|-------------------------------------|-------------------------------------------------------------------------|
+| `github.com/gofiber/fiber/v2`       | Fast, Express-like web framework for Go                                 |
+| `github.com/redis/go-redis/v9`      | Redis client for caching and message queue (Asynq)                      |
+| `github.com/swaggo/fiber-swagger`   | Swagger UI handler for Fiber                                            |
+| `github.com/swaggo/swag`            | CLI for generating Swagger docs from annotations                        |
+| `go.uber.org/zap`                   | High-performance structured logging                                     |
+| `github.com/go-playground/validator/v10` | Input validation for request models                              |
+| `github.com/golang-jwt/jwt/v5`      | JWT authentication and token handling                                  |
+| `github.com/hibiken/asynq`          | Task queue library using Redis (for background jobs)                    |
+| `github.com/joho/godotenv`          | Loads environment variables from .env file                              |
+| `go.mongodb.org/mongo-driver`       | Official MongoDB driver for Go                                          |
+
+---
+
 ## 📌 TODO / Coming Soon
 
 - [ ] OAuth2 Support  
@@ -138,3 +226,5 @@ GitHub: [@iots1](https://github.com/iots1)
 ## 📄 License
 
 MIT © 2025 - iots1
+
+---
